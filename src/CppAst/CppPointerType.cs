@@ -3,6 +3,7 @@
 // See license.txt file in the project root for full license information.
 
 using System;
+using System.Text.RegularExpressions;
 
 namespace CppAst
 {
@@ -18,13 +19,23 @@ namespace CppAst
         public CppPointerType(CppType elementType) : base(CppTypeKind.Pointer, elementType)
         {
             SizeOf = IntPtr.Size;
+            // Check if it is a function ptr
+            Regex regex = new Regex(@"\(\*\w*\d*_*\)");
+            IsFunctionPtr = regex.IsMatch(elementType.GetDisplayName());
         }
 
         /// <inheritdoc />
         public override string ToString()
         {
-            return $"{ElementType.GetDisplayName()}*";
-        }
+            if (IsFunctionPtr)
+            {
+				return $"{ElementType.GetDisplayName()}";
+			}
+			else
+            {
+				return $"{ElementType.GetDisplayName()}*";
+			}
+		}
 
         /// <inheritdoc />
         public override CppType GetCanonicalType()
@@ -32,6 +43,12 @@ namespace CppAst
             var elementTypeCanonical = ElementType.GetCanonicalType();
             if (ReferenceEquals(elementTypeCanonical, ElementType)) return this;
             return new CppPointerType(elementTypeCanonical);
+        }
+
+        public bool IsFunctionPtr
+        {
+            get;
+            private set;
         }
     }
 }
