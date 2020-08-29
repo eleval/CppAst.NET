@@ -6,6 +6,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text;
+using System.Text.RegularExpressions;
 using ClangSharp.Interop;
 
 namespace CppAst
@@ -133,7 +134,7 @@ namespace CppAst
                         {
                             cppClass.TemplateParameters.AddRange(templateParameters);
 
-                            if (cursor.DeclKind == CX_DeclKind.CX_DeclKind_ClassTemplateSpecialization)
+                            if (cursor.DeclKind == CX_DeclKind.CX_DeclKind_ClassTemplateSpecialization || cursor.DeclKind == CX_DeclKind.CX_DeclKind_ClassTemplatePartialSpecialization)
                             {
                                 cppClass.SpecializedTemplate = (CppClass)GetOrCreateDeclarationContainer(cursor.SpecializedCursorTemplate, data).Container;
                             }
@@ -1770,6 +1771,57 @@ namespace CppAst
             {
                 var templateArg = type.GetTemplateArgumentAsType((uint)templateIndex);
                 var templateCppType = GetCppType(templateArg.Declaration, templateArg, cursor, data);
+                if (templateCppType.TypeKind == CppTypeKind.Unexposed)
+                {
+                    // libclang apparently has a long time issue when it comes to parsing non-type templates
+                    // We have to detect them.
+                    // Thanks to https://atilaoncode.blog/2018/11/13/libclang-not-as-great-as-i-thought/ for pointing the info out.
+                    string displayName = cursor.DisplayName.CString;
+                    Regex regex = new Regex(@"[a-zA-Z0-9:_]+<(.+)>");
+                    var match = regex.Match(displayName);
+                    if (match.Success)
+                    {
+                        for (int i = 1; i < match.Groups.Count; ++i)
+                        {
+                            Group group = match.Groups[i];
+                            foreach (Capture capture in group.Captures)
+                            {
+                                // I find it hard to parse template args with another regex, so going manually
+                                // Walk the string manually and capture everything until a , is hit. If we encounter a template <>, ignore everything within it until we're out of it
+                                // Count which template argument we've encountered and start capturing the good one
+                                int templateDepth = 0;
+                                int templateArgIdx = 0;
+                                string templateTypeName = "";
+                                foreach (char c in capture.Value)
+                                {
+                                    switch (c)
+                                    {
+                                        case ',':
+                                            if (templateDepth == 0)
+                                            {
+                                                ++templateArgIdx;
+                                            }
+                                            break;
+                                        case '<':
+                                            ++templateDepth;
+                                            break;
+                                        case '>':
+                                            --templateDepth;
+                                            break;
+                                        default:
+                                            if (templateArgIdx == templateIndex)
+                                            {
+                                                templateTypeName += c;
+                                            }
+                                            break;
+                                    }
+                                }
+                                templateTypeName = templateTypeName.Trim();
+                                templateCppType = new CppUnexposedType(templateTypeName) { SizeOf = templateCppType.SizeOf };
+                            }
+                        }
+                    }
+                }
                 templateCppTypes.Add(templateCppType);
             }
 
