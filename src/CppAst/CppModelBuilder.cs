@@ -234,7 +234,10 @@ namespace CppAst
                     break;
 
                 case CXCursorKind.CXCursor_EnumDecl:
-                    element = VisitEnumDecl(cursor, data);
+                    if (cursor.IsDefinition)
+                    {
+                        element = VisitEnumDecl(cursor, data);
+                    }
                     break;
 
                 case CXCursorKind.CXCursor_TypedefDecl:
